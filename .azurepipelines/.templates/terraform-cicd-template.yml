@@ -147,7 +147,7 @@ steps:
           terraform-compliance -p pipeline.plan -f ${{ parameters.TERRAFORM_COMPLIANCE_PATH }}
         displayName: 'Terraform-Compliance Check'
         workingDirectory: "${{ parameters.TERRAFORM_PATH }}"
-        continueOnError: true
+        continueOnError: false
         enabled: true
 
       - pwsh: |
