@@ -1,0 +1,130 @@
+---
+name: $(Build.DefinitionName)-$(date:yyyyMMdd)$(rev:.r)
+
+trigger: none
+
+# parameters are typed with defaults so they are correctly populated, you will get a choice in the GUI to edit these, but you should keep all changes as code.
+parameters:
+
+  - name: SHORTHAND_ENVIRONMENT_NAME
+    default: dev
+    displayName: "What is the shorthand name for this environment?"
+    type: string
+    values:
+      - dev
+      - poc
+      - mvp
+      - tst
+      - uat
+      - ppd
+      - prd
+
+  - name: SHORTHAND_PROJECT_NAME
+    type: string
+    default: "ldo"
+    displayName: "Shorthand Project e.g. lbdo for libredevops"
+
+  - name: SHORTHAND_LOCATION_NAME
+    type: string
+    default: "euw"
+    displayName: "3 character location name, e.g., uks, ukw, euw"
+
+  - name: TERRAFORM_PATH
+    type: string
+    default: "$(Build.SourcesDirectory)/azure-pipelines-module-development-build/terraform"
+    displayName: "What is the path to your terraform code?"
+
+  - name: TERRAFORM_VERSION
+    type: string
+    default: "1.1.7"
+    displayName: "Which version of Terraform should be installed?"
+
+  - name: VARIABLE_GROUP_NAME
+    type: string
+    default: "svp-kv-ldo-euw-dev-mgt-01"
+    displayName: "Enter the variable group which contains your authentication information"
+
+# This variable sets up a condition in the template, if set to true, it will run terraform plan -destroy instead of the normal plan
+  - name: TERRAFORM_DESTROY
+    default: false
+    displayName: "Check box to run a Destroy"
+    type: boolean
+
+  - name: TERRAFORM_PLAN_ONLY
+    default: true
+    displayName: "Check box to run plan ONLY and never run apply"
+    type: boolean
+
+  - name: CHECKOV_SKIP_TESTS
+    type: string
+    default: ' '
+    displayName: "CheckOV tests to skip if comment skips don't work.  All checks run if parameter is empty, empty by default"
+
+# Declare variable group to pass variables to parameters, in this case, a libre-devops keyvault which is using a service principle for authentication
+variables:
+  - group: ${{ parameters.VARIABLE_GROUP_NAME }}
+
+# Sets what repos need cloned, for example, a library repo for modules and a poly-repo for target code
+resources:
+  repositories:
+
+  - repository: azure-naming-convention
+    type: github
+    endpoint: github_service_connection
+    name: libre-devops/azure-naming-convention
+    ref: main
+
+  - repository: azure-pipelines-module-development-build
+    type: github
+    endpoint: github_service_connection
+    name: libre-devops/azure-pipelines-module-development-build
+    ref: dev
+
+  - repository: terraform-azdo-pipeline-template
+    type: github
+    endpoint: github_service_connection
+    name: libre-devops/terraform-azdo-pipeline-template
+    ref: main
+
+# You may wish to use a separate or self-hosted agent per job, by default, all jobs will inherit stage agent
+pool:
+  name: Azure Pipelines
+  vmImage: ubuntu-latest
+
+# Sets stage so that multiple stages can be used if needed, as it stands, only 1 stage is expected and is thus passed as a parameter
+stages:
+  - stage: "${{ parameters.SHORTHAND_ENVIRONMENT_NAME }}"
+    displayName: "${{ parameters.SHORTHAND_ENVIRONMENT_NAME }} Stage"
+    jobs:
+      - job: Terraform_Build
+        workspace:
+          clean: all
+        displayName: Terraform Build
+        steps:
+
+          # Declare the repos needed from the resources list
+          - checkout: self
+          - checkout: azure-naming-convention
+
+          # Remotely fetch pipeline template, in this case, I am using one in my development repo.
+          - template: /.azurepipelines/.templates/terraform-cicd-template.yml@terraform-azdo-pipeline-template
+            parameters:
+              SHORTHAND_PROJECT_NAME: ${{ parameters.SHORTHAND_PROJECT_NAME }} # Parameters entered in YAML
+              SHORTHAND_ENVIRONMENT_NAME: ${{ parameters.SHORTHAND_ENVIRONMENT_NAME }}
+              SHORTHAND_LOCATION_NAME: ${{ parameters.SHORTHAND_LOCATION_NAME }}
+              TERRAFORM_PATH: ${{ parameters.TERRAFORM_PATH }}
+              TERRAFORM_VERSION: ${{ parameters.TERRAFORM_VERSION }}
+              TERRAFORM_DESTROY: ${{ parameters.TERRAFORM_DESTROY }}
+              TERRAFORM_PLAN_ONLY: ${{ parameters.TERRAFORM_PLAN_ONLY }}
+              TERRAFORM_STORAGE_RG_NAME: $(SpokeSaRgName) # Key Vault variable
+              TERRAFORM_STORAGE_ACCOUNT_NAME: $(SpokeSaName)
+              TERRAFORM_BLOB_CONTAINER_NAME: $(SpokeSaBlobContainerName)
+              TERRAFORM_STORAGE_KEY: $(SpokeSaPrimaryKey)
+              TERRAFORM_STATE_NAME: "${{ parameters.SHORTHAND_PROJECT_NAME }}-${{ parameters.SHORTHAND_LOCATION_NAME }}.terraform.tfstate"
+              TERRAFORM_WORKSPACE_NAME: $(System.StageName)
+              TERRAFORM_COMPLIANCE_PATH: "$(Build.SourcesDirectory)/azure-naming-convention/az-terraform-compliance-policy"
+              AZURE_TARGET_CLIENT_ID: $(SpokeSvpClientId)
+              AZURE_TARGET_CLIENT_SECRET: $(SpokeSvpClientSecret)
+              AZURE_TARGET_TENANT_ID: $(SpokeTenantId)
+              AZURE_TARGET_SUBSCRIPTION_ID: $(SpokeSubID)
+              CHECKOV_SKIP_TESTS: ${{ parameters.CHECKOV_SKIP_TESTS }}
