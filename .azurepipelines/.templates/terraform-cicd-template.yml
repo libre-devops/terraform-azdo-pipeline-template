@@ -153,7 +153,7 @@ steps:
       - pwsh: |
           if ($IsLinux)
           {
-          brew install tfsec
+          brew install tfsec || curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
           }
           elseif ($IsMacOS)
           {
